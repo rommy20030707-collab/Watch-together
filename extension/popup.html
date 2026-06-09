@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      width: 300px;
+      margin: 0;
+      padding: 14px;
+      font: 13px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    h1 { font-size: 15px; margin: 0 0 10px; display: flex; align-items: center; gap: 6px; }
+    .row { margin: 8px 0; }
+    label { display: block; font-weight: 600; margin-bottom: 3px; }
+    input, select {
+      width: 100%; box-sizing: border-box; padding: 6px 8px;
+      border: 1px solid #bbb; border-radius: 6px; font-size: 13px;
+    }
+    .btns { display: flex; gap: 8px; margin-top: 12px; }
+    button {
+      flex: 1; padding: 8px; border: 0; border-radius: 6px;
+      font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+    #join { background: #4f7cff; color: #fff; }
+    #leave { background: #eee; color: #333; }
+    #copy { background: #f0f0f0; color: #333; flex: 0 0 auto; }
+    .status {
+      margin-top: 12px; padding: 8px 10px; border-radius: 6px;
+      background: rgba(127,127,127,.12); display: flex; align-items: flex-start; gap: 8px;
+    }
+    #statusText { white-space: pre-line; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: #999; margin-top: 4px; flex: 0 0 auto; }
+    .dot.on { background: #2ecc71; }
+    .dot.warn { background: #f1c40f; }
+    .dot.err { background: #e74c3c; }
+    .hint { color: #888; font-size: 11px; margin-top: 6px; }
+    #wsRow { display: none; }
+  </style>
+</head>
+<body>
+  <h1>🎬 Watch Together</h1>
+
+  <div class="row">
+    <label>房间号</label>
+    <div style="display:flex; gap:6px;">
+      <input id="room" placeholder="例如 movie-night" />
+      <button id="copy" title="复制房间号">复制</button>
+    </div>
+  </div>
+
+  <div class="row">
+    <label>模式</label>
+    <select id="mode">
+      <option value="local">本地（同一浏览器多个标签页，免服务器）</option>
+      <option value="ws">远程（连 WebSocket 服务器，真·异地双人）</option>
+    </select>
+  </div>
+
+  <div class="row" id="wsRow">
+    <label>服务器地址</label>
+    <input id="wsUrl" placeholder="ws://localhost:8088" />
+  </div>
+
+  <div class="btns">
+    <button id="join">加入 / 创建</button>
+    <button id="leave">离开</button>
+  </div>
+
+  <div class="status">
+    <span class="dot" id="dot"></span>
+    <span id="statusText">未连接</span>
+  </div>
+  <div class="hint" id="hint">两端填同一个房间号即可同步播放/暂停/进度。</div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

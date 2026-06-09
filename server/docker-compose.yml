@@ -1,0 +1,29 @@
+# One-command public relay with automatic HTTPS/WSS via Caddy + Let's Encrypt.
+#   1) point your domain's A record to this server
+#   2) edit Caddyfile: replace your-domain.com with your domain
+#   3) docker compose up -d
+# Clients then连接  wss://your-domain.com
+services:
+  relay:
+    build: .
+    restart: unless-stopped
+    expose:
+      - "8088"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../webclient:/srv/webclient:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - relay
+
+volumes:
+  caddy_data:
+  caddy_config:

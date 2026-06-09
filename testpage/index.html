@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Watch Together — M3U8 / MP4 测试页</title>
+  <style>
+    body { margin: 0; background: #0e0e12; color: #eee; font: 15px/1.6 "Segoe UI", sans-serif; }
+    .wrap { max-width: 880px; margin: 0 auto; padding: 24px 16px 60px; }
+    h1 { font-size: 20px; }
+    video { width: 100%; background: #000; border-radius: 10px; }
+    .src { margin: 14px 0; display: flex; gap: 8px; flex-wrap: wrap; }
+    button { padding: 8px 12px; border: 0; border-radius: 8px; background: #2a2f40; color: #fff; cursor: pointer; }
+    button.active { background: #4f7cff; }
+    code { background: #1c1c26; padding: 2px 6px; border-radius: 4px; }
+    .tip { color: #9aa; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>🎬 Watch Together — 视频同步测试页</h1>
+    <p class="tip">用本页验证扩展对 <b>M3U8(HLS)</b> 与普通 <b>MP4</b> 的进度同步：
+      打开两个标签页 → 扩展里填同一房间号 → 在一个标签页操作，另一个跟随。</p>
+
+    <div class="src">
+      <button data-type="hls" data-src="https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8" class="active">HLS · Mux 测试流</button>
+      <button data-type="hls" data-src="https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8">HLS · Apple 测试流</button>
+      <button data-type="mp4" data-src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4">MP4 · Big Buck Bunny</button>
+    </div>
+
+    <video id="v" controls playsinline></video>
+    <p class="tip" id="info"></p>
+    <p class="tip">原理：HLS 由 <code>hls.js</code> 通过 MSE 喂给同一个 <code>&lt;video&gt;</code> 元素，
+      所以 <code>currentTime</code> / play / pause 与 MP4 完全一致，扩展无需区别对待。
+      Safari 原生支持 HLS，会走原生播放。</p>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js"></script>
+  <script>
+    const v = document.getElementById("v");
+    const info = document.getElementById("info");
+    let hls = null;
+
+    function load(type, src) {
+      if (hls) { hls.destroy(); hls = null; }
+      if (type === "mp4" || v.canPlayType("application/vnd.apple.mpegurl")) {
+        v.src = src;
+        info.textContent = (type === "mp4" ? "MP4 直链" : "原生 HLS") + " · " + src;
+      } else if (window.Hls && Hls.isSupported()) {
+        hls = new Hls();
+        hls.loadSource(src);
+        hls.attachMedia(v);
+        info.textContent = "hls.js (MSE) · " + src;
+      } else {
+        info.textContent = "当前浏览器不支持 HLS";
+      }
+    }
+
+    document.querySelectorAll(".src button").forEach((b) => {
+      b.addEventListener("click", () => {
+        document.querySelectorAll(".src button").forEach((x) => x.classList.remove("active"));
+        b.classList.add("active");
+        load(b.dataset.type, b.dataset.src);
+      });
+    });
+
+    const first = document.querySelector(".src button.active");
+    load(first.dataset.type, first.dataset.src);
+  </script>
+</body>
+</html>

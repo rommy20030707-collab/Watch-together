@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Watch Together — 生成书签 / 安装客户端</title>
+  <style>
+    body { max-width: 760px; margin: 0 auto; padding: 24px 16px 60px; background: #0e0e12; color: #e8e8ee; font: 15px/1.65 "Segoe UI", "Microsoft YaHei", sans-serif; }
+    h1 { font-size: 20px; } h2 { font-size: 16px; margin-top: 28px; }
+    label { display: block; font-weight: 600; margin: 12px 0 4px; }
+    input { width: 100%; box-sizing: border-box; padding: 9px 10px; border-radius: 8px; border: 1px solid #444; background: #1b1b24; color: #fff; font-size: 14px; }
+    .bm { display: inline-block; margin: 14px 0; padding: 10px 16px; background: #4f7cff; color: #fff; border-radius: 8px; text-decoration: none; font-weight: 600; }
+    code, pre { background: #1b1b24; border-radius: 6px; }
+    code { padding: 2px 6px; } pre { padding: 12px; overflow: auto; white-space: pre-wrap; word-break: break-all; font-size: 12px; }
+    button { padding: 8px 12px; border: 0; border-radius: 8px; background: #2a2f40; color: #fff; cursor: pointer; }
+    .tip { color: #9aa; font-size: 13px; }
+    .warn { color: #ffb454; }
+    .ok { color: #59d98a; }
+  </style>
+</head>
+<body>
+  <h1>🎬 Watch Together — 跨平台客户端（无需扩展）</h1>
+  <p class="tip">这是给 <b>安卓 Chrome</b> / <b>iPhone·iPad Safari</b> 等<b>无法装扩展</b>的浏览器准备的方案：
+    通过书签小程序或用户脚本注入同步逻辑，直接连你的 wss 中继。</p>
+
+  <label>中继服务器地址（页面是 https 时必须用 <code>wss://</code>）</label>
+  <input id="relay" placeholder="wss://your-relay.example.com" />
+  <label>房间号（两端填同一个）</label>
+  <input id="room" placeholder="room-abc" />
+
+  <h2>① 书签小程序（所有浏览器，含安卓 Chrome / iOS Safari）</h2>
+  <p class="tip">把下面这个链接<b>拖到书签栏</b>（桌面），或在手机上<b>新建书签并把网址改成下面生成的代码</b>。
+    打开视频页后点这个书签即可开始/停止同步。</p>
+  <a id="bm" class="bm" href="#">▶ 生成后拖我到书签栏</a>
+  <div><button id="copy">复制书签代码</button> <span id="copied" class="ok"></span></div>
+  <pre id="code" style="display:none"></pre>
+  <p class="tip warn" id="csp"></p>
+
+  <h2>② 用户脚本（iOS「Userscripts」App / Tampermonkey / Kiwi）</h2>
+  <p class="tip">更省事、能自动运行：安装 <code>watch-together.user.js</code>，把里面的 <code>RELAY</code> 改成你的地址即可。
+    iOS 在 App Store 装免费的「Userscripts」并在 Safari 设置里启用，把脚本加进去。</p>
+  <p><a class="bm" href="watch-together.user.js" download>下载 watch-together.user.js</a></p>
+
+  <script>
+    let injectSrc = "";
+    const $ = (id) => document.getElementById(id);
+
+    function build() {
+      const relay = $("relay").value.trim();
+      const room = $("room").value.trim();
+      if (!injectSrc) return;
+      // Set config first (its own IIFE), then run inject.js verbatim — it reads
+      // window.__WT_CONFIG at startup. Inlining avoids strict script-src CSP.
+      const cfg = "(function(){window.__WT_CONFIG={relay:" + JSON.stringify(relay) + ",room:" + JSON.stringify(room) + "};})();";
+      const js = cfg + injectSrc + ";void 0";
+      const url = "javascript:" + encodeURIComponent(js);
+      $("bm").href = url;
+      $("code").textContent = url;
+      // warn about connect-src CSP on a few strict sites
+      $("csp").textContent = relay && !/^wss:\/\//.test(relay)
+        ? "⚠ 远端页面多为 https，必须用 wss:// 否则会被浏览器拦截。"
+        : "提示：极少数站点的 CSP(connect-src) 可能拦截到中继的连接，此时改用方案②用户脚本或换中继域名。";
+    }
+
+    fetch("inject.js").then(r => r.text()).then(t => {
+      injectSrc = t; // use verbatim; config is set in a separate IIFE before it
+      build();
+    }).catch(() => {
+      $("csp").textContent = "无法读取 inject.js（请通过 http 访问本页：npm run testpage 后打开 http://localhost:8000/webclient/）。";
+    });
+
+    ["relay", "room"].forEach(id => $(id).addEventListener("input", build));
+    // prefill from localStorage if present
+    $("relay").value = localStorage.getItem("wt_relay") || "";
+    $("room").value = localStorage.getItem("wt_room") || "";
+    $("copy").onclick = async () => { try { await navigator.clipboard.writeText($("code").textContent || $("bm").href); $("copied").textContent = "已复制"; setTimeout(()=>$("copied").textContent="",1500);} catch(e){ $("code").style.display="block"; } };
+    build();
+  </script>
+</body>
+</html>

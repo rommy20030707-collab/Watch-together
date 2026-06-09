@@ -1,0 +1,16 @@
+# dependencies (Render/Koyeb run `npm install` themselves)
+node_modules/
+
+# build artifacts (regenerated; force-add if you want to ship them)
+dist/
+
+# local Edge test profiles created during dev
+.edge*/
+
+# local Claude settings
+.claude/settings.local.json
+
+# misc
+*.log
+.DS_Store
+Thumbs.db

@@ -1,0 +1,16 @@
+{
+  "name": "watch-together-demo",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Browser extension demo to sync video playback between two people (Bilibili / HLS-M3U8 / MP4).",
+  "scripts": {
+    "start": "node server/server-ws.js",
+    "server": "node server/server.js",
+    "server:ws": "node server/server-ws.js",
+    "testpage": "node testpage/serve.js",
+    "check": "node server/check.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

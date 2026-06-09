@@ -1,0 +1,17 @@
+# Render Blueprint — free WebSocket relay for Watch Together.
+# Deploy: push this repo to GitHub, then on https://render.com →
+#   New → Blueprint → pick the repo. Render reads this file and creates the service.
+# You get a public  wss://<name>.onrender.com  with automatic TLS.
+#
+# Free plan note: the instance sleeps after ~15 min idle; the first connection
+# wakes it (~30–60s), then it stays up during your session. Overseas host →
+# 国内访问需要 VPN（两端都要能连到它）。
+services:
+  - type: web
+    name: watch-together-relay
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server/server-ws.js
+    healthCheckPath: /
+    autoDeploy: true

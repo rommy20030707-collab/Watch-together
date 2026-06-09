@@ -1,0 +1,17 @@
+# Replace your-domain.com with your real domain (A record -> this server's IP).
+# Caddy auto-provisions a Let's Encrypt cert and transparently upgrades the
+# WebSocket, so clients get a working wss:// endpoint with zero extra config.
+#
+# This config does TWO things on one domain:
+#   - /wt/*  -> serves the web client (bookmarklet.html / inject.js) over HTTPS,
+#              so phones can open the bookmarklet generator from your domain.
+#   - /*     -> the WebSocket relay (wss://your-domain.com).
+your-domain.com {
+	handle_path /wt/* {
+		root * /srv/webclient
+		file_server browse
+	}
+	handle {
+		reverse_proxy relay:8088
+	}
+}
