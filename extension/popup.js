@@ -16,7 +16,8 @@ function render(s) {
     const st = s.wsStatus || (s.connected ? "open" : "connecting");
     if (st === "open") {
       dot.className = "dot on";
-      $("statusText").textContent = `✅ 已连服务器 · 房间 ${s.roomId}`;
+      const ppl = s.members > 0 ? ` · 👥${s.members}人` : "";
+      $("statusText").textContent = `✅ 已连服务器 · 房间 ${s.roomId}${ppl}`;
     } else if (st === "connecting") {
       dot.className = "dot warn";
       $("statusText").textContent = `连接中… · 房间 ${s.roomId}`;
@@ -56,11 +57,11 @@ async function init() {
   if (s) {
     $("room").value = s.roomId || genRoom();
     $("mode").value = s.mode || "local";
-    $("wsUrl").value = s.wsUrl || "ws://localhost:8088";
+    $("wsUrl").value = s.wsUrl || "wss://watch-together-relay-dznw.onrender.com";
     render(s);
   } else {
     $("room").value = genRoom();
-    $("wsUrl").value = "ws://localhost:8088";
+    $("wsUrl").value = "wss://watch-together-relay-dznw.onrender.com";
   }
   syncWsRow();
 }

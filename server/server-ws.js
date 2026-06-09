@@ -20,11 +20,20 @@ const wss = new WebSocketServer({ server });
 // room -> Set(ws)
 const rooms = new Map();
 
+function broadcastPresence(room) {
+  const set = rooms.get(room);
+  if (!set) return;
+  const out = JSON.stringify({ type: "presence", count: set.size });
+  for (const peer of set) if (peer.readyState === 1) peer.send(out);
+}
+
 function leave(ws) {
   if (ws.room && rooms.has(ws.room)) {
-    const set = rooms.get(ws.room);
+    const room = ws.room;
+    const set = rooms.get(room);
     set.delete(ws);
-    if (set.size === 0) rooms.delete(ws.room);
+    if (set.size === 0) rooms.delete(room);
+    else broadcastPresence(room);
   }
   ws.room = null;
 }
@@ -44,6 +53,7 @@ wss.on("connection", (ws) => {
       if (!rooms.has(ws.room)) rooms.set(ws.room, new Set());
       rooms.get(ws.room).add(ws);
       console.log(`joined ${ws.room} (size ${rooms.get(ws.room).size})`);
+      broadcastPresence(ws.room);
       return;
     }
     if (msg.type === "sync" && ws.room && rooms.has(ws.room)) {

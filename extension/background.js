@@ -25,6 +25,22 @@ const WS_CONNECT_TIMEOUT_MS = 6000;
 // "idle" | "connecting" | "open" | "closed" | "error"
 let wsStatus = "idle";
 let wsAttempts = 0;
+// people in the room: relay-reported count in ws mode, tab count in local mode
+let roomCount = 0;
+let lastPresence = -1;
+
+function presenceCount() {
+  return state.mode === "ws" ? roomCount : memberTabs.size;
+}
+function broadcastPresence(force) {
+  const c = presenceCount();
+  if (!force && c === lastPresence) return;
+  lastPresence = c;
+  for (const tabId of memberTabs) {
+    chrome.tabs.sendMessage(tabId, { kind: "presence", count: c }).catch(() => {});
+  }
+  notifyPopup();
+}
 
 // ---------- persistence ----------
 async function loadState() {
@@ -127,6 +143,9 @@ function openWs() {
     if (msg.type === "sync" && msg.payload) {
       // Came from the server -> push to local tabs only (don't echo back out).
       routeSync(msg.payload, null);
+    } else if (msg.type === "presence") {
+      roomCount = msg.count;
+      broadcastPresence();
     }
   };
   ws.onclose = () => {
@@ -161,7 +180,7 @@ function publicState() {
     mode: state.mode,
     wsUrl: state.wsUrl,
     connected: state.mode === "ws" ? state.connected : memberTabs.size > 0,
-    members: memberTabs.size,
+    members: presenceCount(),
     wsStatus: wsStatus,
     wsAttempts: wsAttempts,
   };
@@ -172,11 +191,14 @@ function joinRoom({ roomId, mode, wsUrl }) {
   state.roomId = roomId;
   state.mode = mode || "local";
   state.wsUrl = wsUrl || "";
+  roomCount = 0;
+  lastPresence = -1;
   saveState();
   if (state.mode === "ws") openWs();
   else closeWs();
   // Tell all member tabs they are now active.
   broadcastRoomStatus();
+  broadcastPresence(true);
   notifyPopup();
 }
 
@@ -184,6 +206,8 @@ function leaveRoom() {
   state.roomId = null;
   wsStatus = "idle";
   wsAttempts = 0;
+  roomCount = 0;
+  lastPresence = -1;
   closeWs();
   saveState();
   broadcastRoomStatus();
@@ -213,7 +237,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (sender.tab && sender.tab.id != null) {
       memberTabs.add(sender.tab.id);
       sendResponse({ roomId: state.roomId });
-      notifyPopup();
+      broadcastPresence(); // local-mode count may have grown
     }
     return true;
   }
@@ -223,6 +247,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     // fresh even after a service-worker restart dropped it.
     if (originTabId != null) memberTabs.add(originTabId);
     if (state.roomId) routeSync(msg.payload, originTabId);
+    broadcastPresence();
     return false;
   }
 
@@ -245,7 +270,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-  if (memberTabs.delete(tabId)) notifyPopup();
+  if (memberTabs.delete(tabId)) broadcastPresence();
 });
 
 // ---------- init ----------

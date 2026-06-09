@@ -133,6 +133,7 @@ function handleFrame(socket, opcode, payload) {
     socket.room = String(msg.room);
     (rooms[socket.room] || (rooms[socket.room] = new Set())).add(socket);
     console.log("joined room", socket.room, "size", rooms[socket.room].size);
+    broadcastPresence(socket.room);
     return;
   }
 
@@ -148,10 +149,19 @@ function handleFrame(socket, opcode, payload) {
   }
 }
 
+function broadcastPresence(room) {
+  var peers = rooms[room];
+  if (!peers) return;
+  var out = sendFrameBuffer(JSON.stringify({ type: "presence", count: peers.size }));
+  peers.forEach(function (peer) { if (peer.writable) peer.write(out); });
+}
+
 function leave(socket) {
   if (socket.room && rooms[socket.room]) {
-    rooms[socket.room].delete(socket);
-    if (rooms[socket.room].size === 0) delete rooms[socket.room];
+    var room = socket.room;
+    rooms[room].delete(socket);
+    if (rooms[room].size === 0) delete rooms[room];
+    else broadcastPresence(room);
   }
   socket.room = null;
 }

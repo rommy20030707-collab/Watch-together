@@ -19,7 +19,7 @@
 
 (function () {
   "use strict";
-  var RELAY = "wss://your-relay.example.com"; // <-- 改成你的中继地址
+  var RELAY = "wss://watch-together-relay-dznw.onrender.com"; // 你的 Render 中继
 
   // 等到出现一个够大的 <video> 再启动（最多等 30 秒）。
   var tries = 0;
@@ -60,27 +60,33 @@
     /* WT_INLINE_START */
     var CFG = window.__WT_CONFIG, relay = CFG.relay, ROOM = CFG.room;
     var SEEK = 0.7, SUP = 900, HB = 3000;
-    var ws = null, video = null, on = true, supU = 0, hb = null, rc = null, last = null, st = "connecting";
+    var ws = null, video = null, on = true, supU = 0, hb = null, rc = null, last = null, st = "connecting", ppl = 0;
+    var MY = { cid: Math.random().toString(36).slice(2), joinTs: Date.now() };
     var EV = ["play", "pause", "seeked", "ratechange"];
     function isLive() { return !!video && video.duration === Infinity; }
     function attach(v) { if (!v || v === video) return; if (video) EV.forEach(function (e) { video.removeEventListener(e, onL); }); video = v; EV.forEach(function (e) { video.addEventListener(e, onL); }); paint(); }
     var mo = new MutationObserver(function () { if (!video || !document.contains(video)) { var v = pickVideo(); if (v) attach(v); } });
     mo.observe(document.documentElement, { childList: true, subtree: true });
     function conn() { clean(); st = "connecting"; paint(); try { ws = new WebSocket(relay); } catch (e) { st = "error"; paint(); sched(); return; }
-      ws.onopen = function () { st = "open"; paint(); ws.send(JSON.stringify({ type: "join", room: ROOM })); if (video) send("hello"); };
-      ws.onmessage = function (ev) { var m; try { m = JSON.parse(ev.data); } catch (e) { return; } if (m.type === "sync" && m.payload) applyR(m.payload); };
+      ws.onopen = function () { st = "open"; paint(); ws.send(JSON.stringify({ type: "join", room: ROOM })); send("hello"); send("requestState"); };
+      ws.onmessage = function (ev) { var m; try { m = JSON.parse(ev.data); } catch (e) { return; } if (m.type === "sync" && m.payload) applyR(m.payload); else if (m.type === "presence") { ppl = m.count; paint(); } };
       ws.onclose = function () { st = st === "open" ? "closed" : "error"; paint(); sched(); }; ws.onerror = function () {}; }
     function clean() { if (ws) { try { ws.onclose = null; ws.close(); } catch (e) {} ws = null; } }
     function sched() { if (rc) return; rc = setTimeout(function () { rc = null; conn(); }, 2000); }
     function sup() { return Date.now() < supU; }
     function onL() { if (!video || !on || sup()) return; last = "me"; send("event"); paint(); }
-    function send(a, x) { if (!ws || ws.readyState !== 1 || !video) return; var p = { action: a, currentTime: video.currentTime, paused: video.paused, rate: video.playbackRate, live: isLive(), ts: Date.now() }; if (x) for (var k in x) p[k] = x[k]; ws.send(JSON.stringify({ type: "sync", room: ROOM, payload: p })); }
+    function send(a, x) { if (!ws || ws.readyState !== 1) return; var p = { action: a, currentTime: video ? video.currentTime : 0, paused: video ? video.paused : true, rate: video ? video.playbackRate : 1, live: isLive(), ts: Date.now(), url: location.href, hasVideo: !!video, cid: MY.cid, joinTs: MY.joinTs }; if (x) for (var k in x) p[k] = x[k]; ws.send(JSON.stringify({ type: "sync", room: ROOM, payload: p })); }
+    function followUrl(p) { if (!on || !p || !p.url || !p.joinTs || p.action === "poke") return; if (p.url.split("#")[0] === location.href.split("#")[0]) return; var sen = p.joinTs < MY.joinTs || (p.joinTs === MY.joinTs && (p.cid || "") < MY.cid); if (!sen) return; try { var l = +sessionStorage.getItem("wt_jumped_at") || 0; if (Date.now() - l < 20000) return; sessionStorage.setItem("wt_jumped_at", String(Date.now())); } catch (e) {} location.href = p.url; }
     function startHb() { stopHb(); hb = setInterval(function () { if (video && on && !video.paused && !sup()) send("heartbeat"); }, HB); }
     function stopHb() { if (hb) clearInterval(hb); hb = null; }
     function applyR(p) {
+      followUrl(p);
       if (p.action === "poke") { pop(p.emoji || "👋"); flash("对方戳了你 " + (p.emoji || "👋")); return; }
       if (p.action === "requestState") { if (video) send("hello"); return; }
-      if (!on) return; if (!video) attach(pickVideo()); if (!video) return;
+      if (!on) return;
+      if (p.hasVideo === false) return;
+      if (p.url && p.url.split("#")[0] !== location.href.split("#")[0]) return;
+      if (!video) attach(pickVideo()); if (!video) return;
       last = "peer"; supU = Date.now() + SUP;
       var lat = Math.max(0, (Date.now() - (p.ts || Date.now())) / 1000), tg = p.paused ? p.currentTime : p.currentTime + lat;
       if (!p.live && !isLive() && Math.abs(video.currentTime - tg) > SEEK) { try { video.currentTime = tg; } catch (e) {} }
@@ -105,7 +111,7 @@
       if (!panel) return;
       var d = panel.querySelector("#wt-d"), t = panel.querySelector("#wt-t"), s = panel.querySelector("#wt-s"), tg = panel.querySelector("#wt-tg");
       d.style.background = st === "open" ? (on ? "#2ecc71" : "#f1c40f") : st === "connecting" ? "#f1c40f" : "#e74c3c";
-      t.textContent = "房间 " + ROOM;
+      t.textContent = "房间 " + ROOM + (st === "open" && ppl > 0 ? " · 👥" + ppl + "人" : "");
       var c = st === "open" ? "已连服务器" : st === "connecting" ? "连接中…" : "❌连不上(检查地址/服务器/wss)";
       if (st === "open") { var w = last === "me" ? "你" : last === "peer" ? "对方" : "—"; s.textContent = c + (video ? (isLive() ? " · 直播" : "") + " · 同步" + (on ? "中" : "停") + " · 上次:" + w : " · 未检测到视频"); }
       else s.textContent = c;

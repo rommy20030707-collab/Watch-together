@@ -20,7 +20,7 @@
   var relay =
     CFG.relay ||
     localStorage.getItem("wt_relay") ||
-    prompt("中继服务器地址 (ws:// 或 wss://)", "wss://your-relay.example.com");
+    prompt("中继服务器地址 (ws:// 或 wss://)", "wss://watch-together-relay-dznw.onrender.com");
   if (!relay) return;
   var room =
     CFG.room ||
@@ -32,7 +32,9 @@
 
   var SEEK_THRESHOLD = 0.7, SUPPRESS_MS = 900, HEARTBEAT_MS = 3000;
   var ws = null, video = null, syncEnabled = true, suppressUntil = 0;
-  var hbTimer = null, reconnectTimer = null, lastActor = null, status = "connecting";
+  var hbTimer = null, reconnectTimer = null, lastActor = null, status = "connecting", people = 0;
+  // identity for forced URL-follow ordering (junior follows senior, no bounce)
+  var MY = { cid: Math.random().toString(36).slice(2), joinTs: Date.now() };
 
   // ---- video discovery (same strategy as the extension) ----
   var host = location.hostname;
@@ -75,11 +77,12 @@
     ws.onopen = function () {
       status = "open"; paint();
       ws.send(JSON.stringify({ type: "join", room: room }));
-      if (video) send("hello");
+      send("hello"); send("requestState"); // announce + pull host URL for auto-jump
     };
     ws.onmessage = function (ev) {
       var m; try { m = JSON.parse(ev.data); } catch (e) { return; }
       if (m.type === "sync" && m.payload) applyRemote(m.payload);
+      else if (m.type === "presence") { people = m.count; paint(); }
     };
     ws.onclose = function () { status = status === "open" ? "closed" : "error"; paint(); schedule(); };
     ws.onerror = function () {};
@@ -90,18 +93,29 @@
   function suppressed() { return Date.now() < suppressUntil; }
   function onLocal() { if (!video || !syncEnabled || suppressed()) return; lastActor = "me"; send("event"); paint(); }
   function send(action, extra) {
-    if (!ws || ws.readyState !== 1 || !video) return;
-    var p = { action: action, currentTime: video.currentTime, paused: video.paused, rate: video.playbackRate, live: isLive(), ts: Date.now() };
+    if (!ws || ws.readyState !== 1) return; // video not required (URL broadcast)
+    var p = { action: action, currentTime: video ? video.currentTime : 0, paused: video ? video.paused : true, rate: video ? video.playbackRate : 1, live: isLive(), ts: Date.now(), url: location.href, hasVideo: !!video, cid: MY.cid, joinTs: MY.joinTs };
     if (extra) for (var k in extra) p[k] = extra[k];
     ws.send(JSON.stringify({ type: "sync", room: room, payload: p }));
+  }
+  function maybeFollowUrl(p) {
+    if (!syncEnabled || !p || !p.url || !p.joinTs || p.action === "poke") return;
+    if (p.url.split("#")[0] === location.href.split("#")[0]) return;
+    var senior = p.joinTs < MY.joinTs || (p.joinTs === MY.joinTs && (p.cid || "") < MY.cid);
+    if (!senior) return;
+    try { var last = +sessionStorage.getItem("wt_jumped_at") || 0; if (Date.now() - last < 20000) return; sessionStorage.setItem("wt_jumped_at", String(Date.now())); } catch (e) {}
+    location.href = p.url; // forced auto-jump to host's page
   }
   function startHb() { stopHb(); hbTimer = setInterval(function () { if (video && syncEnabled && !video.paused && !suppressed()) send("heartbeat"); }, HEARTBEAT_MS); }
   function stopHb() { if (hbTimer) clearInterval(hbTimer); hbTimer = null; }
 
   function applyRemote(p) {
+    maybeFollowUrl(p);
     if (p.action === "poke") { popEmoji(p.emoji || "👋"); flash("对方戳了你一下 " + (p.emoji || "👋")); return; }
     if (p.action === "requestState") { if (video) send("hello"); return; }
     if (!syncEnabled) return;
+    if (p.hasVideo === false) return; // peer has no video — don't apply its state
+    if (p.url && p.url.split("#")[0] !== location.href.split("#")[0]) return; // different page
     if (!video) attach(pickVideo());
     if (!video) return;
     lastActor = "peer"; suppressUntil = Date.now() + SUPPRESS_MS;
@@ -150,7 +164,7 @@
     var d = panel.querySelector("#wt-d"), t = panel.querySelector("#wt-t"), s = panel.querySelector("#wt-s"), tg = panel.querySelector("#wt-tg");
     var color = status === "open" ? (syncEnabled ? "#2ecc71" : "#f1c40f") : status === "connecting" ? "#f1c40f" : "#e74c3c";
     d.style.background = color;
-    t.textContent = "房间 " + room;
+    t.textContent = "房间 " + room + (status === "open" && people > 0 ? " · 👥" + people + "人" : "");
     var conn = status === "open" ? "已连服务器" : status === "connecting" ? "连接中…" : "❌连不上(检查地址/服务器/wss)";
     if (status === "open") {
       var who = lastActor === "me" ? "你" : lastActor === "peer" ? "对方" : "—";

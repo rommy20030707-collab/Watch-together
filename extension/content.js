@@ -19,6 +19,11 @@
   let suppressUntil = 0;
   let heartbeatTimer = null;
   let lastActor = null; // "me" | "peer"
+  let roomPeople = 0; // people in the room (from background/relay)
+
+  // Identity for "who joined first" ordering, so forced URL-follow never
+  // bounces: the JUNIOR (later joinTs; cid breaks ties) follows the SENIOR.
+  const MY = { cid: Math.random().toString(36).slice(2), joinTs: Date.now() };
 
   // ---------- per-site adapters ----------
   const host = location.hostname;
@@ -117,19 +122,40 @@
   }
 
   function send(action, extra) {
-    if (!roomId || !video) return;
+    if (!roomId) return; // a video isn't required (e.g. to broadcast our URL)
     const payload = Object.assign(
       {
         action,
-        currentTime: video.currentTime,
-        paused: video.paused,
-        rate: video.playbackRate,
+        currentTime: video ? video.currentTime : 0,
+        paused: video ? video.paused : true,
+        rate: video ? video.playbackRate : 1,
         live: isLive(),
         ts: Date.now(),
+        url: location.href,
+        hasVideo: !!video,
+        cid: MY.cid,
+        joinTs: MY.joinTs,
       },
       extra || {}
     );
     chrome.runtime.sendMessage({ kind: "sync", payload }).catch(() => {});
+  }
+
+  // Forced URL-follow: the junior peer navigates to the senior peer's page.
+  // A strict total order on (joinTs, cid) guarantees only ONE side ever moves,
+  // so two people on different pages can't bounce back and forth.
+  function maybeFollowUrl(p) {
+    if (!syncEnabled || !p || !p.url || !p.joinTs || p.action === "poke") return;
+    if (p.url.split("#")[0] === location.href.split("#")[0]) return; // already same page
+    const peerSenior =
+      p.joinTs < MY.joinTs || (p.joinTs === MY.joinTs && (p.cid || "") < MY.cid);
+    if (!peerSenior) return; // I'm the senior/host — stay put
+    try {
+      const last = +sessionStorage.getItem("wt_jumped_at") || 0;
+      if (Date.now() - last < 20000) return; // loop guard across reloads
+      sessionStorage.setItem("wt_jumped_at", String(Date.now()));
+    } catch (e) {}
+    location.href = p.url; // forced auto-jump to the host's video
   }
 
   function startHeartbeat() {
@@ -146,6 +172,9 @@
 
   // ---------- incoming ----------
   function applyRemote(p) {
+    // Forced auto-jump to the host's page if we're on a different URL.
+    maybeFollowUrl(p);
+
     // Control / social actions first (don't require strict sync).
     if (p.action === "poke") {
       popEmoji(p.emoji || "👋");
@@ -159,6 +188,10 @@
     }
 
     if (!syncEnabled) return;
+    // Don't let a peer with no video, or a peer on a different page, drive our
+    // playback — only sync progress when both are on the same video page.
+    if (p.hasVideo === false) return;
+    if (p.url && p.url.split("#")[0] !== location.href.split("#")[0]) return;
     if (!video) attachVideo(pickVideo());
     if (!video) return;
 
@@ -264,7 +297,7 @@
 
     if (roomId) {
       dot.className = video ? (syncEnabled ? "on" : "paused") : "warn";
-      title.textContent = `房间 ${roomId}`;
+      title.textContent = `房间 ${roomId}` + (roomPeople > 0 ? ` · 👥${roomPeople}` : "");
     } else {
       dot.className = "off";
       title.textContent = "Watch Together";
@@ -341,6 +374,11 @@
 
   // ---------- background channel ----------
   chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.kind === "presence") {
+      roomPeople = msg.count || 0;
+      render();
+      return;
+    }
     if (msg.kind === "sync" && msg.payload) {
       // Adopt the room if we somehow missed the room broadcast.
       if (msg.roomId && !roomId) {
@@ -358,7 +396,10 @@
         if (v && (significant(v) || window.top === window)) attachVideo(v);
         ensurePanel();
         startHeartbeat();
-        if (video) send("hello");
+        // Announce ourselves AND ask peers for their state — the reply carries
+        // the host's URL, which triggers the forced auto-jump.
+        send("hello");
+        send("requestState");
       } else stopHeartbeat();
       render();
     }
@@ -372,6 +413,8 @@
     if (roomId) {
       ensurePanel();
       startHeartbeat();
+      send("hello");
+      send("requestState");
     }
     render();
   });
