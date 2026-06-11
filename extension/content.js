@@ -1,18 +1,18 @@
-// content.js — Watch Together (extension). Same broadcaster-role model as
-// webclient/inject.js, but the transport is the background worker (which holds
-// the WebSocket / relays between tabs) instead of a direct WebSocket here.
+// content.js — Watch Together (extension). Persistent in-page panel is the only
+// UI: holds the join form (nickname / room / server) when not joined, and the
+// broadcaster/chat controls once joined. The toolbar icon (background
+// action.onClicked) re-opens the panel after it's closed. Transport = the
+// background worker (which holds the WebSocket / relays between tabs).
 (function () {
   if (window.__watchTogetherInjected) return;
   window.__watchTogetherInjected = true;
 
   var SEEK = 0.7, SUP = 900, HB = 3000, HELLO = 5000, STALE = 16000;
   var MY = { cid: Math.random().toString(36).slice(2, 8), joinTs: Date.now() };
-  // Name is provided by the popup via the background worker; fall back to a default.
   var NAME = "用户" + MY.cid.slice(0, 3);
-  function setName(n) { if (n && n !== NAME) { NAME = n; render(); if (roomId) hello(); } }
-
-  var roomId = null, video = null, follow = true, supU = 0, people = 0;
-  var peers = {}, override = null, hbT = null, helloT = null, active = false;
+  var roomId = null, wsUrl = "", mode = "local", conn = "idle"; // conn: idle|connecting|open|error
+  var video = null, follow = true, supU = 0, people = 0;
+  var peers = {}, override = null, hbT = null, helloT = null, builtForRoom = false;
 
   // ---------- video discovery ----------
   function q(s) { return document.querySelector(s); }
@@ -33,10 +33,7 @@
   function isLive() { return !!video && video.duration === Infinity; }
   var EV = ["play", "pause", "seeked", "ratechange"];
   function attach(v) { if (!v || v === video) return; if (video) EV.forEach(function (e) { video.removeEventListener(e, onLocal); }); video = v; EV.forEach(function (e) { video.addEventListener(e, onLocal); }); render(); }
-  var mo = new MutationObserver(function () {
-    if (!active && (window.top === window || sig(pickVideo()))) ensureActive();
-    if (!video || !document.contains(video)) { var v = pickVideo(); if (v && active) attach(v); }
-  });
+  var mo = new MutationObserver(function () { if (!video || !document.contains(video)) { var v = pickVideo(); if (v) attach(v); } });
   mo.observe(document.documentElement, { childList: true, subtree: true });
 
   // ---------- roles ----------
@@ -96,14 +93,27 @@
     }
   }
 
+  // ---------- join / leave (delegate to background) ----------
+  function doJoin() {
+    var nm = (q2("wt-name").value || "").trim(), rm = (q2("wt-room").value || "").trim(), sv = (q2("wt-server").value || "").trim();
+    if (!rm) { formHint("请输入房间号"); return; }
+    NAME = nm || NAME; peers = {}; override = null; MY.joinTs = Date.now();
+    conn = "connecting"; render();
+    chrome.runtime.sendMessage({ kind: "join", roomId: rm, name: NAME, wsUrl: sv, mode: sv ? "ws" : "local" }).catch(function () {});
+  }
+  function doLeave() { chrome.runtime.sendMessage({ kind: "leave" }).catch(function () {}); }
+  function q2(id) { return panel ? panel.querySelector("#" + id) : null; }
+  function formHint(t) { var h = q2("wt-formhint"); if (h) h.textContent = t; }
+
   // ---------- UI ----------
-  var root, panel, icon, dz, flashT, lane = 0;
+  var root, panel, icon, dz, form, body, flashT, lane = 0;
   function hostEl() { return document.fullscreenElement || document.webkitFullscreenElement || document.body || document.documentElement; }
   function mount() { var h = hostEl(); if (root && root.parentNode !== h) h.appendChild(root); }
   function esc(s) { return String(s == null ? "" : s).replace(/[<>&]/g, function (c) { return { "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]; }); }
+  var IN = "width:100%;box-sizing:border-box;margin-bottom:6px;padding:7px 8px;border:0;border-radius:7px;background:rgba(255,255,255,.1);color:#fff;font-size:13px";
 
   function build() {
-    if (root) return;
+    if (root) { mount(); return; }
     root = document.createElement("div");
     root.style.cssText = "position:fixed;inset:0;z-index:2147483647;pointer-events:none;font:13px/1.4 -apple-system,'Segoe UI',Roboto,'Microsoft YaHei',sans-serif";
     dz = document.createElement("div"); dz.style.cssText = "position:absolute;top:8%;left:0;right:0;height:55%;overflow:hidden;pointer-events:none";
@@ -123,39 +133,54 @@
         '<span id="wt-t" style="flex:1;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px">Watch Together</span>' +
         '<span id="wt-min" title="最小化" style="cursor:pointer;opacity:.75;padding:4px 5px;display:inline-flex;align-items:center"><span style="display:inline-block;width:11px;height:2px;background:#fff;border-radius:1px"></span></span>' +
         '<span id="wt-x" title="关闭" style="cursor:pointer;opacity:.75;padding:0 3px;font-size:13px">✕</span></div>' +
-      '<div style="padding:9px 10px 10px">' +
+      '<div id="wt-form" style="padding:10px">' +
+        '<input id="wt-name" placeholder="你的昵称" maxlength="20" style="' + IN + '"/>' +
+        '<input id="wt-room" placeholder="房间号（两端相同）" maxlength="40" style="' + IN + '"/>' +
+        '<input id="wt-server" placeholder="服务器 wss://（留空=本地同浏览器）" style="' + IN + '"/>' +
+        '<button id="wt-join" style="width:100%;border:0;border-radius:7px;background:#4f7cff;color:#fff;font-weight:600;padding:8px;cursor:pointer">加入 / 创建</button>' +
+        '<div id="wt-formhint" style="color:#ffb454;font-size:11px;margin-top:6px;min-height:14px"></div>' +
+      '</div>' +
+      '<div id="wt-body" style="display:none;padding:9px 10px 10px">' +
         '<div id="wt-role" style="font-size:12px;margin-bottom:7px"></div>' +
         '<div id="wt-members" style="margin-bottom:7px"></div>' +
-        '<div style="display:flex;gap:6px"><input id="wt-chat" placeholder="发条弹幕…" maxlength="80" style="flex:1;min-width:0;padding:6px 8px;border:0;border-radius:7px;background:rgba(255,255,255,.1);color:#fff;font-size:12px"/>' +
+        '<div style="display:flex;gap:6px;margin-bottom:7px"><input id="wt-chat" placeholder="发条弹幕…" maxlength="80" style="flex:1;min-width:0;padding:6px 8px;border:0;border-radius:7px;background:rgba(255,255,255,.1);color:#fff;font-size:12px"/>' +
         '<button id="wt-send" style="border:0;border-radius:7px;background:#4f7cff;color:#fff;padding:0 10px;cursor:pointer">发送</button></div>' +
+        '<button id="wt-leave" style="width:100%;border:0;border-radius:7px;background:rgba(255,255,255,.12);color:#fff;padding:6px;cursor:pointer;font-size:12px">离开房间</button>' +
       '</div>';
-    panel.querySelector("#wt-min").onclick = function () { showPanel(false); };
-    panel.querySelector("#wt-x").onclick = function () { if (root) root.remove(); root = null; };
-    var input = panel.querySelector("#wt-chat");
+    form = q2("wt-form"); body = q2("wt-body");
+    q2("wt-min").onclick = function () { showPanel(false); };
+    q2("wt-x").onclick = function () { if (root) root.remove(); root = panel = null; };
+    q2("wt-join").onclick = doJoin;
+    q2("wt-leave").onclick = doLeave;
+    q2("wt-room").addEventListener("keydown", function (e) { if (e.key === "Enter") doJoin(); });
+    var input = q2("wt-chat");
     function fire() { var t = input.value.trim(); if (t) { sendChat(t); input.value = ""; } }
-    panel.querySelector("#wt-send").onclick = fire;
+    q2("wt-send").onclick = fire;
     input.addEventListener("keydown", function (e) { if (e.key === "Enter") fire(); });
-    dragEl(panel.querySelector("#wt-h"), panel);
+    dragEl(q2("wt-h"), panel);
+    prefillForm();
     mount();
     document.addEventListener("fullscreenchange", mount, true);
     document.addEventListener("webkitfullscreenchange", mount, true);
     setInterval(mount, 1500);
     render();
   }
-  function showPanel(show) { if (!panel) return; panel.style.display = show ? "block" : "none"; icon.style.display = show ? "none" : "flex"; }
+  function prefillForm() { if (!panel) return; if (q2("wt-name") && document.activeElement !== q2("wt-name")) q2("wt-name").value = NAME === ("用户" + MY.cid.slice(0, 3)) ? "" : NAME; if (q2("wt-room")) q2("wt-room").value = roomId || ""; if (q2("wt-server")) q2("wt-server").value = wsUrl || ""; }
+  function showPanel(show) { if (!root) build(); if (!panel) return; panel.style.display = show ? "block" : "none"; if (icon) icon.style.display = show ? "none" : "flex"; }
 
   function render() {
     if (!panel || panel.style.display === "none") return;
-    var d = panel.querySelector("#wt-d"), t = panel.querySelector("#wt-t"), role = panel.querySelector("#wt-role"), mem = panel.querySelector("#wt-members");
-    if (!d) return;
-    if (!roomId) { d.style.background = "#888"; t.textContent = "Watch Together"; role.textContent = "未加入 — 点扩展图标建房/加房"; mem.innerHTML = ""; return; }
-    var bc = amB();
-    d.style.background = bc ? "#e74c3c" : (follow ? "#2ecc71" : "#f1c40f");
+    var d = q2("wt-d"), t = q2("wt-t"); if (!d) return;
+    var jd = !!roomId;
+    if (!jd) { form.style.display = "block"; body.style.display = "none"; d.style.background = conn === "connecting" ? "#f1c40f" : "#888"; t.textContent = "Watch Together"; if (conn === "connecting") formHint("连接中…"); return; }
+    form.style.display = "none"; body.style.display = "block";
+    var role = q2("wt-role"), mem = q2("wt-members"), bc = amB();
+    var st = mode === "ws" ? conn : "open";
+    d.style.background = st === "open" ? (bc ? "#e74c3c" : (follow ? "#2ecc71" : "#f1c40f")) : st === "connecting" ? "#f1c40f" : "#e74c3c";
     t.textContent = "房间 " + roomId + (people > 0 ? " · 👥" + people : "");
+    if (st !== "open") { role.textContent = st === "connecting" ? "连接服务器中…" : "❌ 连不上服务器（检查地址/wss）"; mem.innerHTML = ""; return; }
     role.innerHTML = bc ? ('🔴 <b>你正在广播</b>（' + esc(NAME) + '）') : ('👁 跟随 <b>' + esc(bName()) + '</b> 中' + (follow ? "" : "（已暂停）"));
-    var html = "";
-    prune();
-    var others = Object.keys(peers);
+    var html = ""; prune(); var others = Object.keys(peers);
     if (bc) {
       if (others.length) {
         html += '<div style="color:#a8a8b3;font-size:11px;margin-bottom:3px">把广播权交给：</div>';
@@ -169,7 +194,7 @@
     var tg = mem.querySelector("#wt-toggle"); if (tg) tg.onclick = function () { follow = !follow; flash(follow ? "已恢复跟随" : "已暂停跟随（可自由浏览）"); render(); };
     var rq = mem.querySelector("#wt-req"); if (rq) rq.onclick = reqRole;
   }
-  function flash(msg) { var r = panel && panel.querySelector("#wt-role"); if (!r || panel.style.display === "none") return; r.textContent = msg; clearTimeout(flashT); flashT = setTimeout(render, 2200); }
+  function flash(msg) { var r = q2("wt-role"); if (!r || !roomId || panel.style.display === "none") return; r.textContent = msg; clearTimeout(flashT); flashT = setTimeout(render, 2200); }
 
   // ---------- danmaku ----------
   function danmaku(name, text) {
@@ -195,38 +220,32 @@
     handle.addEventListener("touchstart", down, { passive: false }); window.addEventListener("touchmove", move, { passive: false }); window.addEventListener("touchend", up);
   }
 
-  // ---------- activation / background channel ----------
-  function ensureActive() {
-    if (active) return;
-    if (window.top !== window && !sig(pickVideo())) return; // sub-frames without a real video stay dormant
-    active = true;
-    build();
-    attach(pickVideo());
-    startTimers();
-    if (roomId) { hello(); }
+  // ---------- background channel ----------
+  function applyStatus(s) {
+    if (!s) return;
+    if (s.name) NAME = s.name;
+    if (s.mode) mode = s.mode;
+    if (s.wsUrl != null) wsUrl = s.wsUrl;
+    if (s.wsStatus) conn = s.wsStatus === "open" ? "open" : (s.wsStatus === "connecting" ? "connecting" : "error");
+    var was = roomId; roomId = s.roomId || null;
+    if (roomId && mode !== "ws") conn = "open";
+    if (roomId && !was) { MY.joinTs = Date.now(); peers = {}; override = null; attach(pickVideo()); startTimers(); hello(); }
+    if (!roomId && was) { stopTimers(); }
+    if (!roomId) prefillForm();
     render();
   }
 
   chrome.runtime.onMessage.addListener(function (msg) {
+    if (msg.kind === "showPanel") { build(); showPanel(true); return; }
     if (msg.kind === "presence") { people = msg.count || 0; render(); return; }
-    if (msg.kind === "sync" && msg.payload) {
-      if (msg.roomId && !roomId) { roomId = msg.roomId; ensureActive(); }
-      onIncoming(msg.payload);
-      return;
-    }
-    if (msg.kind === "room") {
-      roomId = msg.roomId;
-      if (msg.name) setName(msg.name);
-      if (roomId) { ensureActive(); hello(); } else { stopTimers(); }
-      render();
-    }
+    if (msg.kind === "status") { applyStatus(msg); return; }
+    if (msg.kind === "sync" && msg.payload) { if (msg.roomId && !roomId) applyStatus({ roomId: msg.roomId }); onIncoming(msg.payload); return; }
+    if (msg.kind === "room") { applyStatus({ roomId: msg.roomId, name: msg.name, mode: msg.mode, wsUrl: msg.wsUrl, wsStatus: msg.wsStatus }); }
   });
 
+  build();
   chrome.runtime.sendMessage({ kind: "register" }, function (resp) {
     if (chrome.runtime.lastError) return;
-    roomId = resp && resp.roomId ? resp.roomId : null;
-    if (resp && resp.name) setName(resp.name);
-    if (window.top === window || sig(pickVideo())) ensureActive();
-    render();
+    applyStatus(resp || {});
   });
 })();

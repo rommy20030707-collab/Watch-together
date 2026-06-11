@@ -169,11 +169,20 @@ function scheduleReconnect() {
   }, 2000);
 }
 
-// ---------- popup notification ----------
+// ---------- popup + in-page panel notification ----------
 function notifyPopup() {
   chrome.runtime
     .sendMessage({ kind: "state", state: publicState() })
     .catch(() => {});
+  broadcastStatusToTabs();
+}
+function statusMsg() {
+  return { kind: "status", roomId: state.roomId, mode: state.mode, wsUrl: state.wsUrl, wsStatus: wsStatus, name: state.name };
+}
+function broadcastStatusToTabs() {
+  for (const tabId of memberTabs) {
+    chrome.tabs.sendMessage(tabId, statusMsg()).catch(() => {});
+  }
 }
 function publicState() {
   return {
@@ -226,7 +235,7 @@ function broadcastRoomStatus() {
     for (const t of tabs) {
       if (t.id == null) continue;
       chrome.tabs
-        .sendMessage(t.id, { kind: "room", roomId: state.roomId, name: state.name })
+        .sendMessage(t.id, { kind: "room", roomId: state.roomId, name: state.name, mode: state.mode, wsUrl: state.wsUrl, wsStatus: wsStatus })
         .then(() => { if (state.roomId) memberTabs.add(t.id); })
         .catch(() => {});
     }
@@ -239,7 +248,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.kind === "register") {
     if (sender.tab && sender.tab.id != null) {
       memberTabs.add(sender.tab.id);
-      sendResponse({ roomId: state.roomId, name: state.name });
+      sendResponse({ roomId: state.roomId, name: state.name, mode: state.mode, wsUrl: state.wsUrl, wsStatus: wsStatus });
       broadcastPresence(); // local-mode count may have grown
     }
     return true;
@@ -274,6 +283,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   if (memberTabs.delete(tabId)) broadcastPresence();
+});
+
+// Toolbar icon now opens/reopens the in-page panel instead of a popup.
+chrome.action.onClicked.addListener((tab) => {
+  if (tab && tab.id != null) {
+    chrome.tabs.sendMessage(tab.id, { kind: "showPanel" }).catch(() => {});
+  }
 });
 
 // ---------- init ----------

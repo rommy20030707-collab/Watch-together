@@ -15,8 +15,7 @@
     "128": "icons/icon128.png"
   },
   "action": {
-    "default_popup": "popup.html",
-    "default_title": "Watch Together",
+    "default_title": "Watch Together - click to open panel",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
