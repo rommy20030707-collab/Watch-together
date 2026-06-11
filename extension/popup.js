@@ -57,6 +57,7 @@ async function init() {
   if (s) {
     $("room").value = s.roomId || genRoom();
     $("mode").value = s.mode || "local";
+    $("name").value = s.name || "";
     $("wsUrl").value = s.wsUrl || "wss://watch-together-relay-dznw.onrender.com";
     render(s);
   } else {
@@ -77,6 +78,7 @@ $("join").addEventListener("click", async () => {
     roomId,
     mode: $("mode").value,
     wsUrl: $("wsUrl").value.trim(),
+    name: $("name").value.trim(),
   });
   render(s);
 });

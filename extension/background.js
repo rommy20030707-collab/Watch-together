@@ -10,6 +10,7 @@ const DEFAULT_STATE = {
   roomId: null,
   mode: "local", // "local" | "ws"
   wsUrl: "",
+  name: "", // user's display nickname (set in popup)
   connected: false,
 };
 
@@ -51,7 +52,7 @@ async function loadState() {
 }
 function saveState() {
   chrome.storage.local.set({
-    wt_state: { roomId: state.roomId, mode: state.mode, wsUrl: state.wsUrl },
+    wt_state: { roomId: state.roomId, mode: state.mode, wsUrl: state.wsUrl, name: state.name },
   });
 }
 
@@ -179,6 +180,7 @@ function publicState() {
     roomId: state.roomId,
     mode: state.mode,
     wsUrl: state.wsUrl,
+    name: state.name,
     connected: state.mode === "ws" ? state.connected : memberTabs.size > 0,
     members: presenceCount(),
     wsStatus: wsStatus,
@@ -187,10 +189,11 @@ function publicState() {
 }
 
 // ---------- room control ----------
-function joinRoom({ roomId, mode, wsUrl }) {
+function joinRoom({ roomId, mode, wsUrl, name }) {
   state.roomId = roomId;
   state.mode = mode || "local";
   state.wsUrl = wsUrl || "";
+  if (name != null) state.name = name;
   roomCount = 0;
   lastPresence = -1;
   saveState();
@@ -223,7 +226,7 @@ function broadcastRoomStatus() {
     for (const t of tabs) {
       if (t.id == null) continue;
       chrome.tabs
-        .sendMessage(t.id, { kind: "room", roomId: state.roomId })
+        .sendMessage(t.id, { kind: "room", roomId: state.roomId, name: state.name })
         .then(() => { if (state.roomId) memberTabs.add(t.id); })
         .catch(() => {});
     }
@@ -236,7 +239,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.kind === "register") {
     if (sender.tab && sender.tab.id != null) {
       memberTabs.add(sender.tab.id);
-      sendResponse({ roomId: state.roomId });
+      sendResponse({ roomId: state.roomId, name: state.name });
       broadcastPresence(); // local-mode count may have grown
     }
     return true;

@@ -7,8 +7,9 @@
 
   var SEEK = 0.7, SUP = 900, HB = 3000, HELLO = 5000, STALE = 16000;
   var MY = { cid: Math.random().toString(36).slice(2, 8), joinTs: Date.now() };
-  var NAME = localStorage.getItem("wt_name") || ("用户" + MY.cid.slice(0, 3));
-  try { localStorage.setItem("wt_name", NAME); } catch (e) {}
+  // Name is provided by the popup via the background worker; fall back to a default.
+  var NAME = "用户" + MY.cid.slice(0, 3);
+  function setName(n) { if (n && n !== NAME) { NAME = n; render(); if (roomId) hello(); } }
 
   var roomId = null, video = null, follow = true, supU = 0, people = 0;
   var peers = {}, override = null, hbT = null, helloT = null, active = false;
@@ -120,7 +121,7 @@
       '<div id="wt-h" style="display:flex;align-items:center;gap:6px;padding:8px 10px;cursor:move;background:rgba(255,255,255,.06)">' +
         '<span id="wt-d" style="width:9px;height:9px;border-radius:50%;background:#888;flex:0 0 auto"></span>' +
         '<span id="wt-t" style="flex:1;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px">Watch Together</span>' +
-        '<span id="wt-min" title="最小化" style="cursor:pointer;opacity:.75;padding:0 5px;font-size:15px">—</span>' +
+        '<span id="wt-min" title="最小化" style="cursor:pointer;opacity:.75;padding:4px 5px;display:inline-flex;align-items:center"><span style="display:inline-block;width:11px;height:2px;background:#fff;border-radius:1px"></span></span>' +
         '<span id="wt-x" title="关闭" style="cursor:pointer;opacity:.75;padding:0 3px;font-size:13px">✕</span></div>' +
       '<div style="padding:9px 10px 10px">' +
         '<div id="wt-role" style="font-size:12px;margin-bottom:7px"></div>' +
@@ -215,6 +216,7 @@
     }
     if (msg.kind === "room") {
       roomId = msg.roomId;
+      if (msg.name) setName(msg.name);
       if (roomId) { ensureActive(); hello(); } else { stopTimers(); }
       render();
     }
@@ -223,6 +225,7 @@
   chrome.runtime.sendMessage({ kind: "register" }, function (resp) {
     if (chrome.runtime.lastError) return;
     roomId = resp && resp.roomId ? resp.roomId : null;
+    if (resp && resp.name) setName(resp.name);
     if (window.top === window || sig(pickVideo())) ensureActive();
     render();
   });
