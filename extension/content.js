@@ -213,8 +213,11 @@
   // ---------- drag ----------
   function dragEl(handle, el) {
     var sx, sy, ox, oy, on = false, moved = false;
-    function down(e) { on = true; moved = false; var p = e.touches ? e.touches[0] : e; sx = p.clientX; sy = p.clientY; var r = el.getBoundingClientRect(); ox = r.left; oy = r.top; e.preventDefault(); }
-    function move(e) { if (!on) return; var p = e.touches ? e.touches[0] : e; if (Math.abs(p.clientX - sx) + Math.abs(p.clientY - sy) > 4) moved = true; el.style.left = Math.max(0, ox + p.clientX - sx) + "px"; el.style.top = Math.max(0, oy + p.clientY - sy) + "px"; el.style.right = "auto"; }
+    // Don't start a drag (or preventDefault) on interactive controls, else
+    // touchstart's preventDefault swallows the button's tap on touch devices.
+    function isCtl(t) { return t && t.closest && t.closest("#wt-min,#wt-x,button,input,select,a"); }
+    function down(e) { if (isCtl(e.target)) return; on = true; moved = false; var p = e.touches ? e.touches[0] : e; sx = p.clientX; sy = p.clientY; var r = el.getBoundingClientRect(); ox = r.left; oy = r.top; if (!e.touches) e.preventDefault(); }
+    function move(e) { if (!on) return; var p = e.touches ? e.touches[0] : e; if (Math.abs(p.clientX - sx) + Math.abs(p.clientY - sy) > 4) { moved = true; if (e.touches && e.cancelable) e.preventDefault(); } el.style.left = Math.max(0, ox + p.clientX - sx) + "px"; el.style.top = Math.max(0, oy + p.clientY - sy) + "px"; el.style.right = "auto"; }
     function up() { if (on && moved) el._moved = true; on = false; }
     handle.addEventListener("mousedown", down); window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
     handle.addEventListener("touchstart", down, { passive: false }); window.addEventListener("touchmove", move, { passive: false }); window.addEventListener("touchend", up);
