@@ -11,16 +11,10 @@
 (function () {
   "use strict";
   var RELAY = "wss://watch-together-relay-dznw.onrender.com"; // 改成你的中继地址（https 页面必须 wss://）
-  function hasVid() {
-    var vs = [].slice.call(document.querySelectorAll("video"));
-    for (var i = 0; i < vs.length; i++) { var v = vs[i]; if (v.clientWidth * v.clientHeight >= 60000 || (!v.paused && v.currentTime > 0)) return true; }
-    return false;
-  }
-  var n = 0, t = setInterval(function () {
-    if (++n > 120) { clearInterval(t); return; }      // give up after ~60s
-    if (window.__wtClient || hasVid()) { clearInterval(t); window.__WT_CONFIG = { relay: RELAY }; START(); }
-  }, 500);
-  function START() {
+  // Show the panel immediately on page load (no video gate) so you can always
+  // open it and enter the room — the video is picked up automatically later.
+  window.__WT_CONFIG = { relay: RELAY };
+  (function START() {
 // inject.js — Watch Together standalone client (NO extension), direct wss.
 // A persistent in-page panel is the ONLY UI: it holds the join form (nickname /
 // room / server) when not in a room, and the broadcaster/chat controls once
@@ -30,10 +24,12 @@
 (function () {
   if (window.__wtClient) { try { window.__wtClient.destroy(); } catch (e) {} window.__wtClient = null; return; }
 
+  function LSget(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function LSset(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
   var CFG = window.__WT_CONFIG || {};
-  var relay = CFG.relay || localStorage.getItem("wt_relay") || "";
-  var ROOM = CFG.room || localStorage.getItem("wt_room") || "";
-  var NAME = CFG.name || localStorage.getItem("wt_name") || "";
+  var relay = CFG.relay || LSget("wt_relay") || "";
+  var ROOM = CFG.room || LSget("wt_room") || "";
+  var NAME = CFG.name || LSget("wt_name") || "";
   var MY = { cid: Math.random().toString(36).slice(2, 8), joinTs: Date.now() };
   if (!NAME) NAME = "用户" + MY.cid.slice(0, 3);
 
@@ -138,7 +134,7 @@
     if (!rm) { formHint("请输入房间号"); return; }
     if (!sv) { formHint("请输入服务器地址 (wss://...)"); return; }
     NAME = nm || ("用户" + MY.cid.slice(0, 3)); ROOM = rm; relay = sv;
-    try { localStorage.setItem("wt_name", NAME); localStorage.setItem("wt_room", ROOM); localStorage.setItem("wt_relay", relay); } catch (e) {}
+    LSset("wt_name", NAME); LSset("wt_room", ROOM); LSset("wt_relay", relay);
     peers = {}; override = null; MY.joinTs = Date.now();
     joined = true; render(); attach(pickVideo()); startTimers(); connect();
   }
@@ -273,5 +269,5 @@
   window.__wtClient = { destroy: destroy, show: function () { showPanel(true); } };
 })();
 
-  }
+  })();
 })();

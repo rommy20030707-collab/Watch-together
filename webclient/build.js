@@ -24,18 +24,12 @@ const userjs =
 (function () {
   "use strict";
   var RELAY = ${JSON.stringify(RELAY)}; // 改成你的中继地址（https 页面必须 wss://）
-  function hasVid() {
-    var vs = [].slice.call(document.querySelectorAll("video"));
-    for (var i = 0; i < vs.length; i++) { var v = vs[i]; if (v.clientWidth * v.clientHeight >= 60000 || (!v.paused && v.currentTime > 0)) return true; }
-    return false;
-  }
-  var n = 0, t = setInterval(function () {
-    if (++n > 120) { clearInterval(t); return; }      // give up after ~60s
-    if (window.__wtClient || hasVid()) { clearInterval(t); window.__WT_CONFIG = { relay: RELAY }; START(); }
-  }, 500);
-  function START() {
+  // Show the panel immediately on page load (no video gate) so you can always
+  // open it and enter the room — the video is picked up automatically later.
+  window.__WT_CONFIG = { relay: RELAY };
+  (function START() {
 ${inject}
-  }
+  })();
 })();
 `;
 fs.writeFileSync(path.join(__dirname, "watch-together.user.js"), userjs, "utf8");

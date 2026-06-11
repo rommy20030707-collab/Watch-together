@@ -7,10 +7,12 @@
 (function () {
   if (window.__wtClient) { try { window.__wtClient.destroy(); } catch (e) {} window.__wtClient = null; return; }
 
+  function LSget(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function LSset(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
   var CFG = window.__WT_CONFIG || {};
-  var relay = CFG.relay || localStorage.getItem("wt_relay") || "";
-  var ROOM = CFG.room || localStorage.getItem("wt_room") || "";
-  var NAME = CFG.name || localStorage.getItem("wt_name") || "";
+  var relay = CFG.relay || LSget("wt_relay") || "";
+  var ROOM = CFG.room || LSget("wt_room") || "";
+  var NAME = CFG.name || LSget("wt_name") || "";
   var MY = { cid: Math.random().toString(36).slice(2, 8), joinTs: Date.now() };
   if (!NAME) NAME = "用户" + MY.cid.slice(0, 3);
 
@@ -115,7 +117,7 @@
     if (!rm) { formHint("请输入房间号"); return; }
     if (!sv) { formHint("请输入服务器地址 (wss://...)"); return; }
     NAME = nm || ("用户" + MY.cid.slice(0, 3)); ROOM = rm; relay = sv;
-    try { localStorage.setItem("wt_name", NAME); localStorage.setItem("wt_room", ROOM); localStorage.setItem("wt_relay", relay); } catch (e) {}
+    LSset("wt_name", NAME); LSset("wt_room", ROOM); LSset("wt_relay", relay);
     peers = {}; override = null; MY.joinTs = Date.now();
     joined = true; render(); attach(pickVideo()); startTimers(); connect();
   }
